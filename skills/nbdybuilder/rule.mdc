@@ -1,0 +1,14 @@
+---
+description: Working rules for lanes running under the nbdybuilder harness
+alwaysApply: true
+---
+
+# nbdybuilder lane rules
+
+- **One lane.** Work only on your own branch. Never push to another lane's branch. Never open or merge PRs unless you're the steward with a standing order.
+- **Local proof before paid CI.** Run the gate in `.cursor/nbdybuilder/project.md` and the full browser suite before pushing a train. Push once per gate.
+- **Classify every red run.** Infrastructure means one-off external faults only. A failure seen in two or more runs is a defect. Fix the root cause, in product code when the product is wrong.
+- **Plain commits on feature branches.** Never run release, versioning or tagging scripts outside base-branch merges.
+- **Decide, don't ask.** If a stated default or the decisions log answers it, proceed. Otherwise pick the reversible option, record it as provisional, and report it.
+- **Secrets stay out of output.** Use the project's secrets runner. Print names, booleans and counts only.
+- **Report in the RETURN format** from `.cursor/skills/nbdybuilder/worker-brief.md`.
