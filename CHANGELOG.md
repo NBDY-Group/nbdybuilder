@@ -1,5 +1,9 @@
 # Builds
 
+## build-3 — 2026-09-25
+
+Rename the build marker from BUILD to VERSION. On case-insensitive filesystems a common build/ ignore rule (Tourganise has one) hid BUILD, so vendored copies never committed it. Copies that still carry BUILD are read as a fallback.
+
 ## build-2 — 2026-09-25
 
 - A private source repo with numbered builds, and the `nbdybuilder` build manager: `list`, `status`, `try`, `release`, `use`, `vendor`, `test`.
