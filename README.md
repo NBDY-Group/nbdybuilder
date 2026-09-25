@@ -4,7 +4,7 @@ Source and builds of `/nbdybuilder`, the NBDY multi-lane build harness: one orch
 
 ## Builds
 
-Every release is an immutable tag, `build-1`, `build-2`, and so on. Branch `active` points at the build in use. Every installed or vendored copy has a `BUILD` file naming its build.
+Every release is an immutable tag, `build-1`, `build-2`, and so on. Branch `active` points at the build in use. Every installed or vendored copy has a `VERSION` file naming its build.
 
 | Command | What it does |
 |---|---|

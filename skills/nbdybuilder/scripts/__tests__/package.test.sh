@@ -32,10 +32,14 @@ touch "$TMP/repo/.cursor/skills/nbdybuilder/dropped-by-a-newer-build.md"
 bash "$PKG/install.sh" --repo "$TMP/repo" >/dev/null
 [ ! -e "$TMP/repo/.cursor/skills/nbdybuilder/dropped-by-a-newer-build.md" ] && ok "re-install removes files the package no longer has" || bad "re-install removes files the package no longer has"
 
-cp -R "$PKG" "$TMP/built" && echo "build-9" > "$TMP/built/BUILD"
+cp -R "$PKG" "$TMP/built" && echo "build-9" > "$TMP/built/VERSION"
 git -C "$TMP" init -q repo2
 bash "$TMP/built/install.sh" --repo "$TMP/repo2" >/dev/null
-grep -qx build-9 "$TMP/repo2/.cursor/skills/nbdybuilder/BUILD" && ok "repo install carries BUILD" || bad "repo install carries BUILD"
+grep -qx build-9 "$TMP/repo2/.cursor/skills/nbdybuilder/VERSION" && ok "repo install carries VERSION" || bad "repo install carries VERSION"
+printf 'build\n' > "$TMP/repo2/.gitignore"
+git -C "$TMP/repo2" config core.ignorecase true
+git -C "$TMP/repo2" check-ignore -q .cursor/skills/nbdybuilder/VERSION \
+  && bad "VERSION survives a repo that ignores build/" || ok "VERSION survives a repo that ignores build/"
 
 HOME="$TMP/home" bash "$PKG/install.sh" --global >/dev/null
 [ -f "$TMP/home/.cursor/skills/nbdybuilder/install.sh" ] && ok "global install adds the package" || bad "global install adds the package"

@@ -36,7 +36,8 @@ global_dir() {
 
 installed_build() {
   local f
-  f="$(global_dir)/BUILD"
+  f="$(global_dir)/VERSION"
+  [ -f "$f" ] || f="$(global_dir)/BUILD"
   if [ -f "$f" ]; then head -1 "$f"; fi
 }
 latest_build() { g tag -l 'build-*' --sort=-version:refname | head -1; }
@@ -49,12 +50,12 @@ where() {
   esac
 }
 
-# Replace the installed copy with a package folder. BUILD is stamped in a staging copy, never in the source.
+# Replace the installed copy with a package folder. VERSION is stamped in a staging copy, never in the source.
 place() {
   local src="$1" build="$2" stage target dup
   stage="$(mktemp -d)"
   (cd "$src" && tar --exclude='__pycache__' --exclude='.DS_Store' -cf - .) | (cd "$stage" && tar -xf -)
-  if [ -n "$build" ]; then echo "$build" > "$stage/BUILD"; fi
+  if [ -n "$build" ]; then echo "$build" > "$stage/VERSION"; fi
   target="$(global_dir)"
   rm -rf "$target"
   mkdir -p "$target"
@@ -93,7 +94,7 @@ resolve_build() {
           n="$(build_num "$cur")"
           [ "$n" -gt 1 ] || die "$cur is the first build"
           echo "build-$((n - 1))" ;;
-        *) die "the installed copy's BUILD is '$cur'; name a build instead (see: nbdybuilder list)" ;;
+        *) die "the installed copy's VERSION is '$cur'; name a build instead (see: nbdybuilder list)" ;;
       esac ;;
     build-*) echo "$want" ;;
     [0-9]*) echo "build-$want" ;;
@@ -146,7 +147,7 @@ cmd_use() {
   sha="$(g rev-list -n1 "$tag")"
   tmp="$(mktemp -d)"
   g archive "$tag" "$PKG_PATH" | tar -x -C "$tmp"
-  if [ -f "$tmp/$PKG_PATH/BUILD" ]; then place "$tmp/$PKG_PATH" ""; else place "$tmp/$PKG_PATH" "$tag"; fi
+  if [ -f "$tmp/$PKG_PATH/VERSION" ]; then place "$tmp/$PKG_PATH" ""; else place "$tmp/$PKG_PATH" "$tag"; fi
   rm -rf "$tmp"
   move_active "$sha"
   echo "nbdybuilder: $tag is installed in $(where "$(global_dir)") and is the active build."
@@ -169,13 +170,13 @@ cmd_release() {
   last="$(latest_build)"
   n=0
   if [ -n "$last" ]; then
-    changed="$( { g diff --name-only "$last" -- "$PKG_PATH"; g ls-files --others --exclude-standard -- "$PKG_PATH"; } | grep -v "^$PKG_PATH/BUILD\$" | head -1 || true)"
+    changed="$( { g diff --name-only "$last" -- "$PKG_PATH"; g ls-files --others --exclude-standard -- "$PKG_PATH"; } | grep -v "^$PKG_PATH/VERSION\$" | head -1 || true)"
     [ -n "$changed" ] || die "nothing in $PKG_PATH has changed since $last"
     n="$(build_num "$last")"
   fi
   next="build-$((n + 1))"
   cmd_test >/dev/null || die "the package self-test failed; run: nbdybuilder test"
-  echo "$next" > "$WORK/BUILD"
+  echo "$next" > "$WORK/VERSION"
   [ -f "$REPO/CHANGELOG.md" ] || printf '# Builds\n' > "$REPO/CHANGELOG.md"
   entry="$(printf '## %s — %s\n\n%s' "$next" "$(date +%Y-%m-%d)" "$notes")"
   NBDY_ENTRY="$entry" awk 'NR == 1 { print; print ""; print ENVIRON["NBDY_ENTRY"]; print ""; next } NR == 2 && $0 == "" { next } { print }' \
