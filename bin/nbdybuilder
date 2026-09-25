@@ -1,0 +1,230 @@
+#!/usr/bin/env bash
+# nbdybuilder build manager: try, release, switch and roll back builds of the /nbdybuilder skill.
+# Run `nbdybuilder help` for the commands.
+set -euo pipefail
+
+self="$0"
+while [ -L "$self" ]; do
+  link="$(readlink "$self")"
+  case "$link" in /*) self="$link" ;; *) self="$(dirname "$self")/$link" ;; esac
+done
+REPO="$(cd "$(dirname "$self")/.." && pwd)"
+PKG_PATH="skills/nbdybuilder"
+WORK="$REPO/$PKG_PATH"
+
+die() { echo "nbdybuilder: $*" >&2; exit 1; }
+g() { git -C "$REPO" "$@"; }
+has_origin() { g remote get-url origin >/dev/null 2>&1; }
+
+store_skills() {
+  local files
+  for files in "$HOME/Library/Application Support/Cursor/AgentStores/cursor_agent_stores"/u*/files; do
+    if [ -d "$files/skills" ]; then echo "$files/skills"; return; fi
+  done
+}
+
+# Same rule as the package's `install.sh --global`: an existing synced copy wins, so there is only ever one copy.
+global_dir() {
+  local store
+  store="$(store_skills)"
+  if [ -n "$store" ] && [ -d "$store/nbdybuilder" ]; then echo "$store/nbdybuilder"
+  elif [ -d "$HOME/.cursor/skills/nbdybuilder" ]; then echo "$HOME/.cursor/skills/nbdybuilder"
+  elif [ -n "$store" ]; then echo "$store/nbdybuilder"
+  else echo "$HOME/.cursor/skills/nbdybuilder"
+  fi
+}
+
+installed_build() {
+  local f
+  f="$(global_dir)/BUILD"
+  if [ -f "$f" ]; then head -1 "$f"; fi
+}
+latest_build() { g tag -l 'build-*' --sort=-version:refname | head -1; }
+build_num() { echo "${1#build-}"; }
+
+where() {
+  case "$1" in
+    */AgentStores/*) echo "the synced skills folder (local sessions and Cloud Agents)" ;;
+    *) echo "$HOME/.cursor/skills (local sessions only; turn on Sync Skills for Cloud Agents to reach the cloud)" ;;
+  esac
+}
+
+# Replace the installed copy with a package folder. BUILD is stamped in a staging copy, never in the source.
+place() {
+  local src="$1" build="$2" stage target dup
+  stage="$(mktemp -d)"
+  (cd "$src" && tar --exclude='__pycache__' --exclude='.DS_Store' -cf - .) | (cd "$stage" && tar -xf -)
+  if [ -n "$build" ]; then echo "$build" > "$stage/BUILD"; fi
+  target="$(global_dir)"
+  rm -rf "$target"
+  mkdir -p "$target"
+  (cd "$stage" && tar -cf - .) | (cd "$target" && tar -xf -)
+  chmod +x "$target"/install.sh "$target"/scripts/*.sh "$target"/scripts/*.py "$target"/scripts/__tests__/*.sh
+  rm -rf "$stage"
+  dup="$HOME/.cursor/skills/nbdybuilder"
+  if [ "$target" != "$dup" ] && [ -d "$dup" ]; then
+    mkdir -p "$HOME/.Trash"
+    mv "$dup" "$HOME/.Trash/nbdybuilder-duplicate-$(date +%Y%m%d%H%M%S)"
+    echo "nbdybuilder: moved a second, unsynced copy from ~/.cursor/skills to the Trash."
+  fi
+}
+
+move_active() {
+  if ! has_origin; then
+    echo "nbdybuilder: no origin remote, so branch active wasn't updated."
+    return
+  fi
+  g push -q --force origin "$1:refs/heads/active" 2>/dev/null \
+    || echo "nbdybuilder: couldn't update branch active on GitHub (offline?). Run the same command again to retry." >&2
+}
+
+resolve_build() {
+  local want="$1" cur base n
+  case "$want" in
+    latest) latest_build ;;
+    previous)
+      cur="$(installed_build)"
+      case "$cur" in
+        "") die "nothing is installed yet; run: nbdybuilder use latest" ;;
+        dev*)
+          base="$(echo "$cur" | sed -n 's/.*based on \(build-[0-9]*\).*/\1/p')"
+          echo "${base:-$(latest_build)}" ;;
+        build-*)
+          n="$(build_num "$cur")"
+          [ "$n" -gt 1 ] || die "$cur is the first build"
+          echo "build-$((n - 1))" ;;
+        *) die "the installed copy's BUILD is '$cur'; name a build instead (see: nbdybuilder list)" ;;
+      esac ;;
+    build-*) echo "$want" ;;
+    [0-9]*) echo "build-$want" ;;
+    *) die "unknown build '$want' (see: nbdybuilder list)" ;;
+  esac
+}
+
+cmd_list() {
+  local cur t d s mark
+  cur="$(installed_build)"
+  g for-each-ref --sort=-version:refname --format='%(refname:short)|%(creatordate:short)|%(contents:subject)' 'refs/tags/build-*' |
+    while IFS='|' read -r t d s; do
+      mark=" "
+      if [ "$t" = "$cur" ]; then mark="*"; fi
+      printf '%s %-9s %s  %s\n' "$mark" "$t" "$d" "$s"
+    done
+  case "$cur" in dev*) echo "* installed: $cur" ;; esac
+}
+
+cmd_status() {
+  local dir cur latest sha active dirty ahead
+  dir="$(global_dir)"
+  cur="$(installed_build)"
+  latest="$(latest_build)"
+  echo "Installed: ${cur:-nothing}"
+  echo "Location:  $dir"
+  echo "           $(where "$dir")"
+  if has_origin; then
+    sha="$(g ls-remote origin refs/heads/active 2>/dev/null | cut -f1)"
+    active="not set"
+    if [ -n "$sha" ]; then active="$(g describe --tags --exact-match --match 'build-*' "$sha" 2>/dev/null || echo "${sha:0:8}")"; fi
+    echo "GitHub:    branch active -> $active (Cloud Agents without the synced skill fetch this)"
+  fi
+  dirty="$(g status --porcelain -- "$PKG_PATH" | wc -l | tr -d ' ')"
+  ahead=0
+  if [ -n "$latest" ]; then ahead="$(g rev-list --count "$latest"..HEAD -- "$PKG_PATH")"; fi
+  echo "Source:    $REPO on $(g rev-parse --abbrev-ref HEAD); latest build ${latest:-none}; package changes since: $ahead committed, $dirty uncommitted"
+  if [ -n "$(store_skills)" ] && [ -d "$(store_skills)/nbdybuilder" ] && [ -d "$HOME/.cursor/skills/nbdybuilder" ]; then
+    echo "Warning:   there are two installed copies; run 'nbdybuilder use ${cur:-latest}' to keep only the synced one."
+  fi
+}
+
+cmd_test() { bash "$WORK/scripts/__tests__/package.test.sh"; }
+
+cmd_use() {
+  local want="${1:-}" tag sha tmp
+  [ -n "$want" ] || die "usage: nbdybuilder use <build-N|N|latest|previous>"
+  tag="$(resolve_build "$want")"
+  g rev-parse -q --verify "refs/tags/$tag" >/dev/null || die "there's no build called $tag (see: nbdybuilder list)"
+  sha="$(g rev-list -n1 "$tag")"
+  tmp="$(mktemp -d)"
+  g archive "$tag" "$PKG_PATH" | tar -x -C "$tmp"
+  if [ -f "$tmp/$PKG_PATH/BUILD" ]; then place "$tmp/$PKG_PATH" ""; else place "$tmp/$PKG_PATH" "$tag"; fi
+  rm -rf "$tmp"
+  move_active "$sha"
+  echo "nbdybuilder: $tag is installed in $(where "$(global_dir)") and is the active build."
+}
+
+cmd_try() {
+  local base
+  cmd_test >/dev/null || die "the package self-test failed; run: nbdybuilder test"
+  base="$(latest_build)"
+  place "$WORK" "dev (based on ${base:-no build yet}; working tree of $REPO)"
+  echo "nbdybuilder: your working tree is installed as a dev build in $(where "$(global_dir)")."
+  echo "Branch active still points at ${base:-nothing}. Keep it with: nbdybuilder release \"what changed\". Undo with: nbdybuilder use previous"
+}
+
+cmd_release() {
+  local notes="$1" branch last next n changed entry
+  [ -n "$notes" ] || die 'usage: nbdybuilder release "what changed"'
+  branch="$(g rev-parse --abbrev-ref HEAD)"
+  [ "$branch" = main ] || die "release from main (the checkout is on $branch)"
+  last="$(latest_build)"
+  n=0
+  if [ -n "$last" ]; then
+    changed="$( { g diff --name-only "$last" -- "$PKG_PATH"; g ls-files --others --exclude-standard -- "$PKG_PATH"; } | grep -v "^$PKG_PATH/BUILD\$" | head -1 || true)"
+    [ -n "$changed" ] || die "nothing in $PKG_PATH has changed since $last"
+    n="$(build_num "$last")"
+  fi
+  next="build-$((n + 1))"
+  cmd_test >/dev/null || die "the package self-test failed; run: nbdybuilder test"
+  echo "$next" > "$WORK/BUILD"
+  [ -f "$REPO/CHANGELOG.md" ] || printf '# Builds\n' > "$REPO/CHANGELOG.md"
+  entry="$(printf '## %s — %s\n\n%s' "$next" "$(date +%Y-%m-%d)" "$notes")"
+  NBDY_ENTRY="$entry" awk 'NR == 1 { print; print ""; print ENVIRON["NBDY_ENTRY"]; print ""; next } NR == 2 && $0 == "" { next } { print }' \
+    "$REPO/CHANGELOG.md" > "$REPO/CHANGELOG.md.tmp"
+  mv "$REPO/CHANGELOG.md.tmp" "$REPO/CHANGELOG.md"
+  g add -A
+  g commit -q -m "$next: $(printf '%s\n' "$notes" | head -1)"
+  g tag -a "$next" -m "$notes"
+  if has_origin; then
+    g push -q origin main "refs/tags/$next" \
+      || die "$next is committed and tagged locally, but the push failed; run: git -C $REPO push origin main $next"
+    if [ -z "${NBDY_NO_GH:-}" ] && command -v gh >/dev/null 2>&1; then
+      (cd "$REPO" && gh release create "$next" --title "$next" --notes "$notes" >/dev/null 2>&1) \
+        || echo "nbdybuilder: couldn't create the GitHub release page for $next (the tag is pushed)."
+    fi
+  fi
+  cmd_use "$next"
+}
+
+cmd_vendor() {
+  local dir
+  [ -n "${1:-}" ] || die "usage: nbdybuilder vendor <repo path>"
+  dir="$(global_dir)"
+  [ -f "$dir/install.sh" ] || die "no build is installed; run: nbdybuilder use latest"
+  bash "$dir/install.sh" --repo "$1"
+}
+
+usage() {
+  cat <<'EOF'
+nbdybuilder: builds of the /nbdybuilder harness (source: skills/nbdybuilder in this repo)
+
+  list                             builds, newest first (* = installed)
+  status                           what's installed, where, and what GitHub's active branch points at
+  try                              install your working tree as a dev build, to test changes
+  release "what changed"           self-test, commit, tag the next build-N, push, install it, make it active
+  use <build-N|N|latest|previous>  switch to a build, or roll back
+  vendor <repo>                    copy the installed build into a repo (/nbdybuilder also does this)
+  test                             run the package self-test on the working tree
+EOF
+}
+
+case "${1:-help}" in
+  list) cmd_list ;;
+  status) cmd_status ;;
+  try) cmd_try ;;
+  release) shift; cmd_release "$*" ;;
+  use) shift; cmd_use "${1:-}" ;;
+  vendor) shift; cmd_vendor "${1:-}" ;;
+  test) cmd_test ;;
+  help | -h | --help) usage ;;
+  *) usage; exit 1 ;;
+esac

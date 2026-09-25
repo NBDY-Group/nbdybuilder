@@ -7,6 +7,8 @@ description: NBDY multi-lane build harness. One orchestrator session plans and s
 
 The owner talks to one session, the **orchestrator**. The orchestrator never writes product code. It keeps the plan, dispatches cloud **lanes** (workers), reviews their evidence, routes CI failures, and asks the owner only what nobody else can answer. A **steward** lane lands green PRs in order. Work never waits for the owner unless an action is truly theirs.
 
+Invoked as `/nbdybuilder`, run the steps in `command.md` (next to this file) now. `BUILD` names this copy's build (`build-N`, or `dev` for an unreleased working copy); the source and every build live in the private repo `NBDY-Group/nbdybuilder`.
+
 Per-repo files (created on first run from the templates in this folder):
 
 | File | Purpose |
@@ -38,7 +40,7 @@ Scripts in `scripts/` (run from the repo root; each reads `harness.env`): `gate-
 
 ## Starting or restructuring (what `/nbdybuilder` does)
 
-1. **Bootstrap.** Make sure this package is in the repo (`.cursor/skills/nbdybuilder/`), so cloud lanes can read it. If only a global copy exists (`~/.cursor/skills/nbdybuilder/`), run its `install.sh --repo .`. If `.cursor/nbdybuilder/project.md` is missing, create it from the template by reading the repo: README, package manifests, CI workflows, test commands, the ledger or issue list, deploy config and secrets tooling.
+1. **Bootstrap.** Make sure this package is in the repo (`.cursor/skills/nbdybuilder/`), so cloud lanes can read it. If you're running from a global or synced copy, run `install.sh --repo .` from that copy's folder; run it too when the repo's copy is a different build (compare the first line of each `BUILD`). If `.cursor/nbdybuilder/project.md` is missing, create it from the template by reading the repo: README, package manifests, CI workflows, test commands, the ledger or issue list, deploy config and secrets tooling.
 2. **Survey.** Read the ledger and pickup docs, open PRs (`gate-status.sh`), the base branch's last CI result, existing branches, and any cloud agents already running on this repo (`cursor-cloud list-cloud-agents`). Adopt their branches into lanes; never kill or overwrite another session's work.
 3. **Intake questions.** Collect only the questions that block planning: scope or priority conflicts, product decisions with no reasonable default, missing credentials, and whether production is in scope. Ask them in **one batch**, with the `AskQuestion` tool when it's available, each with a recommended default. Don't wait for the answers: start with the defaults for anything unanswered and adjust when answers arrive. Record answers in the decisions log.
 4. **Plan.** Map the remaining work into domains, then into lanes and trains. Set the merge queue and the provisional numbering map. Write the state file.
@@ -104,11 +106,11 @@ Judge a lane by its branch pushes and task status: transcripts lag, especially f
 4. **Branch protection and auto-merge** where the plan allows. Private repos need a paid GitHub plan; without it, the steward merges with `merge-pr.sh`.
 5. **A merge steward** holding a standing order: "merge #X, #Y, #Z in that order when each is green".
 
-## Using it in other repos
+## Installing, builds and updates
 
-- **Every local Cursor session:** `bash .cursor/skills/nbdybuilder/install.sh --global`. After that, `/nbdybuilder` works in any repo and vendors itself on first run.
-- **Another repo, for cloud sessions:** `bash .cursor/skills/nbdybuilder/install.sh --repo <path>`, then commit `.cursor/`. Cloud lanes read only what's in the repo.
-- **Updating:** edit the package here, run `scripts/__tests__/package.test.sh`, then re-run the install. Re-installs never overwrite a repo's `project.md` or `harness.env`.
+- **Every session on the owner's machine, and Cloud Agents:** the installed copy is a personal skill. With Cursor's "Sync Skills for Cloud Agents" on, it lives in the synced skills folder of the personal agent store, and Cloud Agents started from the desktop app get the same build. `install.sh --global` (or the build manager below) updates that copy instead of creating a second one.
+- **Another repo, for cloud lanes:** `/nbdybuilder` vendors the installed build on first run (`install.sh --repo .`), and again whenever the repo's copy is a different build. Commit `.cursor/`: cloud lanes read only what's in the repo. Re-installs never overwrite a repo's `project.md` or `harness.env`.
+- **Changing the harness:** change the source repo (`NBDY-Group/nbdybuilder`, checked out at `~/Projects/nbdybuilder` on the owner's laptop), never an installed or vendored copy. The `nbdybuilder` command there manages builds: `try` installs the working tree to test it, `release "<notes>"` runs the self-test and cuts the next `build-N`, `use <build-N|previous>` switches or rolls back, and `list`/`status` show what's installed. Branch `active` points at the build in use.
 
 ## Cost discipline
 

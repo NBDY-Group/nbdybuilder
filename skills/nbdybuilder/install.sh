@@ -1,28 +1,42 @@
 #!/usr/bin/env bash
 # Install the nbdybuilder harness.
-#   install.sh --global        Make /nbdybuilder available in every local Cursor session (~/.cursor).
+#   install.sh --global        Make /nbdybuilder available in every Cursor session on this machine. With Cursor's
+#                              "Sync Skills for Cloud Agents" on, this updates the synced copy, so Cloud Agents get it too.
 #   install.sh --repo <path>   Vendor the harness into a repo so cloud lanes can read it too.
-# Re-running either mode updates the package files and never overwrites a repo's own config
+# Re-running either mode replaces the package files and never touches a repo's own config
 # (.cursor/nbdybuilder/project.md, harness.env).
 set -euo pipefail
 SRC="$(cd "$(dirname "$0")" && pwd)"
 
 copy_package() {
-  local dest="$1"
-  mkdir -p "$dest"
-  if [ "$(cd "$dest" && pwd)" = "$SRC" ]; then
+  local dest="${1:?}"
+  if [ -d "$dest" ] && [ "$(cd "$dest" && pwd)" = "$SRC" ]; then
     return
   fi
+  rm -rf "$dest"
+  mkdir -p "$dest"
   (cd "$SRC" && tar --exclude='__pycache__' -cf - .) | (cd "$dest" && tar -xf -)
   chmod +x "$dest"/install.sh "$dest"/scripts/*.sh "$dest"/scripts/*.py "$dest"/scripts/__tests__/*.sh
 }
 
+# Skill sync moves personal skills into Cursor's agent store; its skills folder exists once that has happened.
+global_dir() {
+  local files store=""
+  for files in "$HOME/Library/Application Support/Cursor/AgentStores/cursor_agent_stores"/u*/files; do
+    if [ -d "$files/skills" ]; then store="$files/skills"; break; fi
+  done
+  if [ -n "$store" ] && [ -d "$store/nbdybuilder" ]; then echo "$store/nbdybuilder"
+  elif [ -d "$HOME/.cursor/skills/nbdybuilder" ]; then echo "$HOME/.cursor/skills/nbdybuilder"
+  elif [ -n "$store" ]; then echo "$store/nbdybuilder"
+  else echo "$HOME/.cursor/skills/nbdybuilder"
+  fi
+}
+
 case "${1:-}" in
   --global)
-    copy_package "$HOME/.cursor/skills/nbdybuilder"
-    mkdir -p "$HOME/.cursor/commands"
-    cp "$SRC/command.md" "$HOME/.cursor/commands/nbdybuilder.md"
-    echo "nbdybuilder: installed globally. In any repo, run /nbdybuilder; it vendors itself into the repo on first run."
+    DEST="$(global_dir)"
+    copy_package "$DEST"
+    echo "nbdybuilder: installed at $DEST. In any repo, run /nbdybuilder; it vendors itself into the repo on first run."
     ;;
   --repo)
     REPO="$(cd "${2:?usage: install.sh --repo <path>}" && pwd)"
@@ -38,7 +52,7 @@ case "${1:-}" in
     fi
     ;;
   *)
-    sed -n '2,6p' "$0" | sed 's/^# \{0,1\}//'
+    sed -n '2,7p' "$0" | sed 's/^# \{0,1\}//'
     exit 1
     ;;
 esac

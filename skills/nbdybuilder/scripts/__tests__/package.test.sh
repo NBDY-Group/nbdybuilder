@@ -28,12 +28,27 @@ grep -q mine "$TMP/repo/.cursor/nbdybuilder/project.md" && ok "re-install keeps 
 base="$(cd "$TMP/repo" && bash -c '. .cursor/skills/nbdybuilder/scripts/_config.sh; echo "$HARNESS_BASE"')"
 [ "$base" = trunk ] && ok "_config.sh loads the repo harness.env" || bad "_config.sh loads the repo harness.env (got $base)"
 
-HOME="$TMP/home" bash "$PKG/install.sh" --global >/dev/null
-[ -f "$TMP/home/.cursor/commands/nbdybuilder.md" ] && ok "global install adds the command" || bad "global install adds the command"
-[ -f "$TMP/home/.cursor/skills/nbdybuilder/install.sh" ] && ok "global install adds the package" || bad "global install adds the package"
+touch "$TMP/repo/.cursor/skills/nbdybuilder/dropped-by-a-newer-build.md"
+bash "$PKG/install.sh" --repo "$TMP/repo" >/dev/null
+[ ! -e "$TMP/repo/.cursor/skills/nbdybuilder/dropped-by-a-newer-build.md" ] && ok "re-install removes files the package no longer has" || bad "re-install removes files the package no longer has"
 
-REPO_ROOT="$(git -C "$PKG" rev-parse --show-toplevel)"
-if [ -f "$REPO_ROOT/.cursor/commands/nbdybuilder.md" ]; then
+cp -R "$PKG" "$TMP/built" && echo "build-9" > "$TMP/built/BUILD"
+git -C "$TMP" init -q repo2
+bash "$TMP/built/install.sh" --repo "$TMP/repo2" >/dev/null
+grep -qx build-9 "$TMP/repo2/.cursor/skills/nbdybuilder/BUILD" && ok "repo install carries BUILD" || bad "repo install carries BUILD"
+
+HOME="$TMP/home" bash "$PKG/install.sh" --global >/dev/null
+[ -f "$TMP/home/.cursor/skills/nbdybuilder/install.sh" ] && ok "global install adds the package" || bad "global install adds the package"
+[ ! -e "$TMP/home/.cursor/commands/nbdybuilder.md" ] && ok "global install adds no separate command" || bad "global install adds no separate command"
+
+SYNCED="$TMP/home2/Library/Application Support/Cursor/AgentStores/cursor_agent_stores/u1/files/skills"
+mkdir -p "$SYNCED/nbdybuilder"
+HOME="$TMP/home2" bash "$PKG/install.sh" --global >/dev/null
+[ -f "$SYNCED/nbdybuilder/SKILL.md" ] && [ ! -e "$TMP/home2/.cursor/skills/nbdybuilder" ] \
+  && ok "global install updates the synced copy, not a second one" || bad "global install updates the synced copy, not a second one"
+
+REPO_ROOT="$(git -C "$PKG" rev-parse --show-toplevel 2>/dev/null || true)"
+if [ -n "$REPO_ROOT" ] && [ -f "$REPO_ROOT/.cursor/commands/nbdybuilder.md" ]; then
   cmp -s "$PKG/command.md" "$REPO_ROOT/.cursor/commands/nbdybuilder.md" && ok "this repo's /nbdybuilder is current" || bad "this repo's /nbdybuilder differs from command.md (run install.sh --repo .)"
   cmp -s "$PKG/rule.mdc" "$REPO_ROOT/.cursor/rules/nbdybuilder.mdc" && ok "this repo's rule is current" || bad "this repo's rule differs from rule.mdc (run install.sh --repo .)"
 fi

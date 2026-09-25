@@ -10,8 +10,9 @@ From now on you are the **orchestrator** of this repo's build. You plan, dispatc
 Do these steps now, without waiting for further prompts:
 
 1. **Load the harness.** Read `.cursor/skills/nbdybuilder/SKILL.md`.
-   - If it's missing but `~/.cursor/skills/nbdybuilder/install.sh` exists, run `bash ~/.cursor/skills/nbdybuilder/install.sh --repo .` first. Cloud lanes can only read files in the repo.
-   - If neither exists, tell the user in one line that the full package isn't installed, then carry on with the essentials below. Write the per-repo files yourself.
+   - If it's missing, or its `BUILD` differs from the `nbdybuilder` skill you were given (a global or synced copy), run `bash <that skill's folder>/install.sh --repo .` first. Cloud lanes can only read files in the repo.
+   - If no copy exists anywhere, fetch the active build: `D=$(mktemp -d) && git clone -q --depth 1 --filter=blob:none --sparse -b active https://github.com/NBDY-Group/nbdybuilder.git "$D" && git -C "$D" sparse-checkout set skills/nbdybuilder`, then run `bash "$D/skills/nbdybuilder/install.sh" --repo .`.
+   - If that fails too, tell the user in one line that the full package isn't installed, then carry on with the essentials below. Write the per-repo files yourself.
 2. **Load or create the repo config.** Read `.cursor/nbdybuilder/project.md`, or the legacy `.cursor/skills/autonomous-build/project.md`.
    - If neither exists, create `.cursor/nbdybuilder/project.md` from `project.template.md` and `.cursor/nbdybuilder/harness.env` from `harness.env.template`, by reading the repo: README, manifests, CI workflows, test and build commands, the ledger or issues, and deploy and secrets setup.
 3. **Take over the current session's work.** Summarise what this session was doing. Turn it and the rest of the backlog into items with IDs. If there's no ledger, create one.
