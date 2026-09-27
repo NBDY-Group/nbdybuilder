@@ -21,7 +21,7 @@ To tune the harness: edit `skills/nbdybuilder/`, run `nbdybuilder try`, use it, 
 ## Where it runs
 
 - **Local sessions** (IDE, Agents window, CLI): the installed copy is a personal skill. With Cursor's "Sync Skills for Cloud Agents" on, it lives in the personal agent store's synced `skills/nbdybuilder/` folder; otherwise in `~/.cursor/skills/nbdybuilder/`. There is only ever one installed copy.
-- **Cloud Agents:** the synced skill. Agents that don't get synced skills (for example ones started from the web or Slack) fetch branch `active` from this repo, as the owner's user rule and `command.md` instruct.
+- **Cloud Agents:** the synced skill. Agents that don't get synced skills (anything not started from the desktop app) fetch branch `active` from this public repo with no credentials, as the owner's user rule and `command.md` instruct. A cloud agent's GitHub access covers only the repo it works in, which is why this repo is public.
 - **Repos:** `/nbdybuilder` vendors the installed build into `.cursor/skills/nbdybuilder/`, so the cloud lanes it dispatches can read it, and re-vendors when the repo's copy is a different build.
 
 This repo has no GitHub Actions. Tests run locally: `nbdybuilder test` and `bash tests/cli.test.sh`.
